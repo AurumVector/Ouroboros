@@ -49,19 +49,19 @@
   # ── Isolated Operational Profiles ────────────────────────────
   specialisation = {
     gaming.configuration = {
-      imports = [ ./specialisations/gaming.nix ];
+      imports = [ ../../modules/profiles/gaming ];
     };
     
     llm.configuration = {
-      imports = [ ./specialisations/llm.nix ];
+      imports = [ ../../modules/profiles/llm ];
     };
     
-    mining.configuration = {
-      imports = [ ./specialisations/mining.nix ];
-    };
+   # mining.configuration = {
+     # imports = [ ./specialisations/mining.nix ];
+    #};
     
-    cyberlab.configuration = {
-      imports = [ ./specialisations/cyberlab.nix ];
-    };
+   # cyberlab.configuration = {
+    #  imports = [ ./specialisations/cyberlab.nix ];
+    #};
   };
 }

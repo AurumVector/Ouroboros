@@ -42,7 +42,7 @@
   # ── Ollama Local Inference Engine ────────────────────────────────────────
   services.ollama = {
     enable       = true;
-    acceleration = "cuda";
+    package = pkgs.ollama-cuda;
     
     # OPSEC/Architecture: Offload heavy model blobs to the SATA SSD tier
     home         = "/mnt/models/ollama";
