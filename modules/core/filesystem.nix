@@ -1,182 +1,217 @@
-# =============================================================================
-# modules/core/filesystem.nix — Cryptographic Storage & Ephemeral Root
-# =============================================================================
-# ARCHITECTURE BLUEPRINT:
+# ==============================================================================
+# SYSTEM LAYER: CORE (Inviolable System Base)
+# MODULE:       modules/core/filesystem.nix
+# PROJECT:      Ouroboros (NixOS 26.05 "Yarara")
+# ARCHITECT:    aurumvector
+# LICENSE:      MIT
+# ==============================================================================
 #
-#   Primary Forge (Samsung 990 Pro 1TB - PCIe 4.0)
-#     └── LUKS2 (Argon2id, AES-XTS 512-bit) ← Stage-1 Detached USB Key Unlock
-#           └── Btrfs
-#                 ├── @           → /           (Ephemeral Root)
-#                 ├── @blank      → Reference snapshot for stateless rollback
-#                 ├── @nix        → /nix        (Persistent Nix store)
-#                 ├── @persist    → /persist    (Explicit state persistence)
-#                 ├── @home       → /home       (User data)
-#                 └── @snapshots  → /.snapshots (System recovery points)
+# ARCHITECTURAL DESIGN SCHEMATIC:
 #
-#   Secondary Storage
-#     ├── Sabrent NVMe 512GB → CyberLab isolated storage (Active via specialisation)
-#     └── HDD 2TB            → /mnt/storage (XFS data volume)
+# Primary Drive (Samsung 990 Pro 1TB - PCIe 4.0)
+# └── LUKS2 Container (Argon2id, AES-XTS 512-bit)
+#     └── Btrfs Filesystem
+#         ├── @           --> /           (Ephemeral Root - Reset on boot)
+#         ├── @blank      -->             (Reference snapshot for clean rollback)
+#         ├── @nix        --> /nix        (Persistent Nix Store)
+#         ├── @persist    --> /persist    (Explicitly whitelisted system state)
+#         ├── @home       --> /home       (User home directories)
+#         └── @snapshots  --> /.snapshots (System-level recovery points)
 #
-# IMPERMANENCE DOCTRINE (Stateless System):
-#   The root (/) subvolume is destroyed and recreated from the sterile @blank 
-#   snapshot on every boot cycle. Only explicitly whitelisted directories in 
-#   environment.persistence (symlinked from /persist) survive a reboot.
-# =============================================================================
+# Dedicated Wear-Offloader (Crucial SATA SSD 256GB)
+# └── LUKS2 Container (Argon2id, AES-XTS 512-bit)
+#     └── Btrfs Filesystem
+#         └── @ollama     --> /mnt/models (High-write weight: LLMs & Cache)
+#
+# Isolate Lab Drive (Sabrent NVMe 512GB)
+# └── Mounted dynamically via "cyberlab" specialisation (Zero host contamination)
+#
+# Deep Storage Unit (HDD 2TB)
+# └── XFS Volume          --> /mnt/storage (Cold Archive / Backups)
+#
+# ==============================================================================
 
 { config, lib, pkgs, ... }:
 
 let
-  # Inherit abstracted hardware identifiers (UUIDs/by-id)
+  # Import abstracted physical hardware constants (UUIDs & Disk IDs) [1]
   ids = import ../../lib/hardware-ids.nix;
 in
 {
-  # ── LUKS2 Cryptography: Stage-1 USB Key Unlocking ────────────────────────
-  # High-entropy raw keyfile (4096 bytes) read directly from block device.
-  # Fallback to manual passphrase (Slot 0) if USB key is absent for 30s.
+  # ----------------------------------------------------------------------------
+  # STAGE-1 DEVICE INITIALIZATION (systemd-initrd)
+  # ----------------------------------------------------------------------------
+  # NixOS 26.05 "Yarara" defaults to systemd-stage-1.
+  # Cryptographic unlock and rollback engines run natively on systemd.[2]
+  boot.initrd.systemd.enable = lib.mkDefault true;
+
+  # ----------------------------------------------------------------------------
+  # LUKS2 DECRYPTION DEFAULTS & TOKENS
+  # ----------------------------------------------------------------------------
+  
+  # Cryptroot: Primary Samsung 990 Pro [1]
   boot.initrd.luks.devices."cryptroot" = {
     device = "/dev/disk/by-uuid/${ids.uuids.luksNvmeMain}";
+    
+    # Read raw 4096-byte key from USB Key (Slot 1) [1]
+    keyFile = "/dev/disk/by-id/${ids.byId.usbKey}";
+    keyFileSize = 4096;
+    keyFileOffset = 0;
 
-    keyFile       = "${ids.byId.usbKey}";
-    keyFileSize   = 4096;
+    # Safe fallback window: if USB key is absent, request passphrase in 30s [1]
+    crypttabExtraOpts = [ "keyfile-timeout=30" "nofail" ];
+
+    # Low-Latency SSD Tuning
+    allowDiscards = true;    # Passthrough TRIM commands down to NVMe controller [1]
+    bypassWorkqueues = true; # Direct physical I/O bypass; eliminates CPU scheduler queue latency
+  };
+
+  # Cryptmodels: Secondary Crucial SATA SSD (Ollama Datasets) [1]
+  boot.initrd.luks.devices."cryptmodels" = {
+    device = "/dev/disk/by-uuid/${ids.uuids.luksSataSsd}";
+    
+    # Detached token unlocking (Slot 1) synced with primary key
+    keyFile = "/dev/disk/by-id/${ids.byId.usbKey}";
+    keyFileSize = 4096;
     keyFileOffset = 0;
     
-    crypttabExtraOpts = [ "keyfile-timeout=30" ];
-
-    # Low-latency NVMe tuning
-    allowDiscards = true;       # Enables TRIM across LUKS layer
-    bypassWorkqueues = true;    # Direct I/O bypass for max NVMe IOPS
+    # Fallback and stability opts; prevents system hangs if secondary bus is slow
+    crypttabExtraOpts = [ "keyfile-timeout=30" "nofail" ];
+    allowDiscards = true;
   };
+
+  # ----------------------------------------------------------------------------
+  # FILE SYSTEM MOUNT MATRIX (DECLARATIVE)
+  # ----------------------------------------------------------------------------
+  # Mount options explanations:
+  # - compress=zstd:3: Default Btrfs balance. Optimal space saving / CPU ratio.[1]
+  # - compress=zstd:1: Lower compression for highly uncompressible weights (saves CPU).[1]
+  # - noatime: Prevents write wear on NAND cells on read operations.[1]
+  # - discard=async: Asynchronous block freeing; avoids I/O blocking during deletions.[1]
   
-  # ── LUKS2: 256GB SATA (Ollama + Podman Store) ──────────
-  boot.initrd.luks.devices."cryptmodels" = {
-    device            = "/dev/disk/by-uuid/${ids.uuids.luksSataSsd}";
-    keyFile           = "${ids.byId.usbKey}";
-    keyFileSize       = 4096;
-    keyFileOffset     = 0;
-    crypttabExtraOpts = [ "keyfile-timeout=30" ];
-    allowDiscards     = true; 
-  };
-
-  # ── Btrfs Subvolume Declarations ─────────────────────────────────────────
-  # Standardized Options:
-  #   - compress=zstd:3: Optimal balance between compression ratio and CPU load.
-  #   - noatime / space_cache=v2 / discard=async: SSD longevity and performance.
   fileSystems."/" = {
-    device  = "/dev/mapper/cryptroot";
-    fsType  = "btrfs";
+    device = "/dev/mapper/cryptroot";
+    fsType = "btrfs";
     options = [ "subvol=@" "compress=zstd:3" "noatime" "space_cache=v2" "discard=async" ];
   };
 
   fileSystems."/nix" = {
-    device  = "/dev/mapper/cryptroot";
-    fsType  = "btrfs";
+    device = "/dev/mapper/cryptroot";
+    fsType = "btrfs";
     options = [ "subvol=@nix" "compress=zstd:3" "noatime" "space_cache=v2" "discard=async" ];
   };
 
   fileSystems."/persist" = {
-    device        = "/dev/mapper/cryptroot";
-    fsType        = "btrfs";
-    options       = [ "subvol=@persist" "compress=zstd:3" "noatime" "space_cache=v2" "discard=async" ];
-    neededForBoot = true; # Mandatory for Impermanence to stitch state in initrd
+    device = "/dev/mapper/cryptroot";
+    fsType = "btrfs";
+    options = [ "subvol=@persist" "compress=zstd:3" "noatime" "space_cache=v2" "discard=async" ];
+    neededForBoot = true; # Critical: Impermanence state-engine mount phase [1]
   };
 
   fileSystems."/home" = {
-    device  = "/dev/mapper/cryptroot";
-    fsType  = "btrfs";
+    device = "/dev/mapper/cryptroot";
+    fsType = "btrfs";
     options = [ "subvol=@home" "compress=zstd:3" "noatime" "space_cache=v2" "discard=async" ];
   };
 
   fileSystems."/.snapshots" = {
-    device  = "/dev/mapper/cryptroot";
-    fsType  = "btrfs";
+    device = "/dev/mapper/cryptroot";
+    fsType = "btrfs";
     options = [ "subvol=@snapshots" "compress=zstd:3" "noatime" "space_cache=v2" "discard=async" ];
   };
 
   fileSystems."/boot" = {
-    device  = "/dev/disk/by-uuid/${ids.uuids.efiPartition}";
-    fsType  = "vfat";
-    options = [ "fmask=0077" "dmask=0077" "iocharset=utf8" ];
+    device = "/dev/disk/by-uuid/${ids.uuids.efiPartition}";
+    fsType = "vfat";
+    options = [ "fmask=0077" "dmask=0077" "iocharset=utf8" ]; # Secure mask: Root-only readable
   };
 
-  fileSystems."/mnt/storage" = {
-    device  = "/dev/disk/by-uuid/${ids.uuids.hddStorage}";
-    fsType  = "xfs";
-    options = [ "noatime" "nofail" "lazytime" ]; # nofail prevents boot hang if HDD is disconnected
-  };
-
-  # ── Ephemeral Root Rollback Engine ───────────────────────────────────────
-  # Executes in initrd before root is mounted. Annihilates the previous session's
-  # root state and clones a pristine root from the @blank snapshot.
-  # ── Mount: SATA SSD Models & Container Store ───────────────────────────
+  # Dedicated high-wear Ollama Models and Podman Storage Cache [1]
+  # Offloads write amplification away from primary Samsung 990 Pro.
+  # Write Amplification Factor (WAF) formula: $WAF = \frac{\text{Flash Writes}}{\text{Host Writes}}$
   fileSystems."/mnt/models" = {
-    device  = "/dev/mapper/cryptmodels";
-    fsType  = "btrfs";
-    # zstd:1 enough for compressed models, saving CPU cycles
-    options = [ "subvol=@ollama" "compress=zstd:1" "noatime" "discard=async" ];
+    device = "/dev/mapper/cryptmodels";
+    fsType = "btrfs";
+    options = [ "subvol=@ollama" "compress=zstd:1" "noatime" "space_cache=v2" "discard=async" "nofail" ];
   };
+
+  # Cold Storage mechanical vault [1]
+  fileSystems."/mnt/storage" = {
+    device = "/dev/disk/by-uuid/${ids.uuids.hddStorage}";
+    fsType = "xfs";
+    options = [ "noatime" "nofail" "lazytime" ]; # lazytime merges inode writes; preserves mechanical head lifespan
+  };
+
+  # ----------------------------------------------------------------------------
+  # EPHEMERAL ROOT ROLLBACK ENGINE (STATELESS RESET)
+  # ----------------------------------------------------------------------------
+  # WARN: The automatic rollback is commented out under Phase 1 of Ouroboros.
+  # Safe promotion to Phase 2 requires ensuring the '@blank' template snapshot
+  # is stable and populated correctly on target disk.[1]
+  #
+  # Temporal systemd initrd execution path:
+  # systemd-cryptsetup@cryptroot.service --> rollback-root.service --> sysroot.mount [3]
+
+  /*
   boot.initrd.systemd.services.rollback-root = {
     description = "Btrfs Stateless Rollback: Erase @ and restore from @blank";
-    wantedBy    = [ "initrd.target" ];
-    after       = [ "systemd-cryptsetup@cryptroot.service" ];
-    before      = [ "sysroot.mount" ];
-    
+    wantedBy = [ "initrd.target" ];
+    after = [ "systemd-cryptsetup@cryptroot.service" ];
+    before = [ "sysroot.mount" ];
+
     unitConfig.DefaultDependencies = "no";
-    
+
     serviceConfig = {
-      Type            = "oneshot";
+      Type = "oneshot";
       RemainAfterExit = true;
     };
-    
+
     script = ''
       set -euo pipefail
 
       mkdir -p /mnt
       mount -t btrfs -o subvol=/ /dev/mapper/cryptroot /mnt
 
-      # Recursively delete any nested subvolumes created during the session
+      # Recursively parse and destroy any nested subvolumes created during session
       if btrfs subvolume show /mnt/@ &>/dev/null; then
         while IFS= read -r sv; do
           [ -n "$sv" ] && btrfs subvolume delete "/mnt/$sv" || true
         done < <(btrfs subvolume list -o /mnt/@ | awk '{print $NF}' | sort -r)
-        
-        # Destroy the main root subvolume
+
+        # Obliterate active corrupted root
         btrfs subvolume delete /mnt/@
       fi
 
-      # Clone a sterile root from the reference snapshot
+      # Clone a sterile runtime environment from template
       btrfs subvolume snapshot /mnt/@blank /mnt/@
       umount /mnt
     '';
   };
+  */
 
-  # ── Declarative State Persistence (Impermanence) ─────────────────────────
-  # Defines the strict whitelist of files/directories allowed to persist 
-  # across the stateless root wipes.
-  environment.persistence."/persist" = {
-    hideMounts = true;
+  # ----------------------------------------------------------------------------
+  # EXPLICIT PERSISTENCE LAYER (Impermanence)
+  # ----------------------------------------------------------------------------
+  # Enforces a declarative data footprint. Any path omitted here is wiped.
+  # Symlinks are mounted from `/persist` directly onto the ephemeral `/`.[1]
+ environment.persistence."/persist" = {
+  hideMounts = true;
+  directories = [
+    "/var/lib/nixos"
+    "/var/lib/prometheus"
 
-    directories = [
-      # Core System State
-      "/var/log"
-      "/var/lib/nixos"
-      "/var/lib/systemd/coredump"
-      "/var/lib/bluetooth"
-      "/var/lib/NetworkManager"
+    # High-Security Vaults
+    { directory = "/persist/secureboot"; mode = "0700"; } # Lanzaboote keys
+    { directory = "/persist/secrets";    mode = "0700"; } # Cryptographic agenix secrets
+    { directory = "/persist/mining";     mode = "0700"; } # Cold wallets
 
-      # Workload Profiles (Persisted regardless of active specialisation)
-      "/var/lib/libvirt"    # CyberLab VMs
-      "/var/lib/prometheus" # Monitoring Telemetry
+    # Ollama configuration
+    { directory = "/var/lib/ollama";     mode = "0750"; }
+  ];
 
-      # High-Security / Sensitive Paths
-      { directory = "/var/lib/ollama"; mode = "0750"; }
-      { directory = "/persist/secureboot"; mode = "0700"; }
-      { directory = "/persist/secrets";    mode = "0700"; }
-      { directory = "/persist/mining";     mode = "0700"; } # External mining config/wallets
-    ];
-
-    files = [
-      "/etc/machine-id" # Maintains consistent network identity
-      # SSH Host Keys
+  files = [
+      # SSH Host Keys (Persisted to maintain known host fingerprints) [1]
+      "/etc/machine-id"
       "/etc/ssh/ssh_host_ed25519_key"
       "/etc/ssh/ssh_host_ed25519_key.pub"
       "/etc/ssh/ssh_host_rsa_key"

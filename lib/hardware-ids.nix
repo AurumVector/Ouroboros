@@ -31,10 +31,10 @@
 {
   uuids = {
     # Main system LUKS container (Samsung 990 Pro 1TB)
-    luksNvmeMain = "1c4600b6-d68e-43bf-b7cf-d4cbb61a0ecf";
+    luksNvmeMain = "c0cda2bf-e902-4cfa-aec6-9df6ddb4b6ff";
 
     # EFI System Partition (bootloader target)
-    efiPartition = "398D-7B37";
+    efiPartition = "F46D-8EFC";
 
     # Secondary LUKS container (Sabrent NVMe 512GB / CyberLab)
     luksSabrent = "de1fa47b-bb1b-4a68-9218-746fb0e4a4fd";
@@ -42,8 +42,11 @@
     # HDD storage partition (2TB XFS dataset)
     hddStorage = "6327bc84-3235-4d7e-9842-371319b27765";
     
-    # SATA SDD Partition (256GB)
-    luksSataSsd = "da17025a-2c57-490b-a10c-2804af9c5065";
+    # SATA SDD Partition (256GB - cryptmodels)
+    luksSataSsd = "f0989296-6084-4527-a78c-e76d148cc7a4";
+    
+    # BTRFS subvolume within cryptmodels
+    cryptModelsFs = "da17025a-2c57-490b-a10c-2804af9c5065";
   };
 
   byId = {

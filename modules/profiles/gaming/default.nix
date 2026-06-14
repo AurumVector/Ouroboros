@@ -133,5 +133,7 @@
     vkbasalt    # Vulkan post-processing injection
     protonup-qt # Declarative-adjacent GUI management for Proton-GE variants
     ludusavi    # Save-state archival tool
+    librewolf
+    sbctl
   ];
 }

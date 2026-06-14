@@ -60,8 +60,8 @@
       "-a always,exit -F arch=b64 -S open -F dir=/etc -F success=0 -k access_denied"
       
       # Tactic: Defense Evasion (Monitor dynamic module loading)
-      "-w /sbin/insmod  -p x -k module_load"
-      "-w /sbin/modprobe -p x -k module_load"
+#      "-w /sbin/insmod  -p x -k module_load"
+#      "-w /sbin/modprobe -p x -k module_load"
 
       # Tactic: Impact (Monitor unauthorized mount operations)
       "-a always,exit -F arch=b64 -S mount -F auid>=1000 -F auid!=4294967295 -k unauthorized_mount"

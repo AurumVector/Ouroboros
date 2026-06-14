@@ -60,20 +60,19 @@
   # systemd-based initrd is mandatory for the Ouroboros architecture:
   #   1. Deterministic Btrfs root rollbacks (Impermanence).
   #   2. Declarative LUKS unlocking with configurable keyfile timeouts.
-  boot.initrd.systemd.enable = true;
-  boot.supportedFilesystems = [ "btrfs" "vfat" ];
+  environment.systemPackages = with pkgs; [
+  sbctl
+  ];
 
-  # ── Secure Boot Integration (Lanzaboote) ───────────────────────────────
-  # Replaces the default systemd-boot to enforce cryptographic signature 
-  # verification against a custom PKI before kernel execution.
-  boot.loader.systemd-boot.enable = lib.mkForce false;
-  boot.loader.efi.canTouchEfiVariables = true;
-
-  boot.lanzaboote = {
-    enable = true;
-    # Points to the persistent storage location where sbctl keys are securely held.
-    pkiBundle = "/persist/secureboot"; 
-  };
+  boot = { 
+    initrd.systemd.enable = true;
+    supportedFilesystems = [ "btrfs" "vfat" ];
+  
+  loader = {
+    systemd-boot.enable = true;
+    efi.canTouchEfiVariables = true;
+     };
+   };
 
   # ── Dynamic eBPF Scheduler ─────────────────────────────────────────────
   # Active globally. Do not override in specialisations; scx_lavd natively 
