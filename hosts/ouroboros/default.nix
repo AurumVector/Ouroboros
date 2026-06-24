@@ -46,6 +46,13 @@
   networking.hostName = "ouroboros";
   system.stateVersion = "26.05"; 
 
+  # ── Peripherals Pipeline (OpenRazer) ─────────────────────────────────────
+  # Hardware driver for Basilisk V3 Pro, Huntsman V2 TKL, and Mouse Dock Pro
+  hardware.openrazer.enable = true;
+  hardware.openrazer.users = [ "goldenhat" ]; # <-- REEMPLAZA ESTO POR TU USERNAME
+  users.users.goldenhat.extraGroups = [ "plugdev" "input" "openrazer" ];
+  boot.kernelModules = [ "razerkbd" "razermouse" "razeraccessory" "razerkraken" ];
+
   # ── Isolated Operational Profiles ────────────────────────────
   specialisation = {
     gaming.configuration = {
@@ -56,12 +63,12 @@
       imports = [ ../../modules/profiles/llm ];
     };
     
-   # mining.configuration = {
-     # imports = [ ./specialisations/mining.nix ];
-    #};
+    money.configuration = {
+      imports = [ ../../modules/profiles/money ];
+    };
     
-   # cyberlab.configuration = {
-    #  imports = [ ./specialisations/cyberlab.nix ];
-    #};
+    cyberlab.configuration = {
+      imports = [ ../../modules/profiles/cyberlab ];
+    };
   };
 }

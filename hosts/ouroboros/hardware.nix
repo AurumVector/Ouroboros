@@ -24,6 +24,23 @@
   imports = [
     (modulesPath + "/installer/scan/not-detected.nix")
   ];
+  # ── Kernel Parameters (IOMMU ENABLE) ──────────────────────────────
+  boot.kernelParams = [
+    "amd_iommu=on"
+    "iommu=pt"
+];
+
+ # ── GPU HOST DRIVER BLOCK ────────────────────────────────────────
+  boot.blacklistedKernelModules = [
+    "nouveau"
+  ];
+
+  # ── INITRD VFIO EARLY LOAD ────────────────────────────────────────
+  boot.initrd.kernelModules = [
+    "vfio"
+    "vfio_pci"
+    "vfio_iommu_type1"
+  ];
 
   # ── Stage-1 Bootloader (initrd) Modules ──────────────────────────────
   # Minimal surface area: Only load modules critical for decrypting 
@@ -37,8 +54,6 @@
     "uas"           # USB Attached SCSI (High-throughput USB 3.x protocol)
     "sd_mod"        # SCSI disk generic support
   ];
-
-  boot.initrd.kernelModules = [ ];
 
   # ── User-Space Kernel Modules ────────────────────────────────────────
   boot.kernelModules = [

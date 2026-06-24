@@ -82,7 +82,8 @@
     kdePackages.dolphin     # File Manager
     kdePackages.konsole     # Terminal Emulator
     kdePackages.ark         # Archive Manager
-    
+    vscode
+
     # Media & Diagnostics
     kdePackages.spectacle   # Advanced Screenshot/Recording tool
     kdePackages.gwenview    # Image Viewer

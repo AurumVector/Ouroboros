@@ -127,12 +127,14 @@
     __GL_THREADED_OPTIMIZATIONS = "1";
   };
 
+
   # ── Tactical Gaming Toolchain ────────────────────────────────────────────
   environment.systemPackages = with pkgs; [
     mangohud    # Telemetry overlay (Frametimes, 1% lows, Thermal limits)
     vkbasalt    # Vulkan post-processing injection
     protonup-qt # Declarative-adjacent GUI management for Proton-GE variants
     ludusavi    # Save-state archival tool
+    polychromatic
     librewolf
     sbctl
   ];
